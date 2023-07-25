@@ -1,8 +1,4 @@
-/**
-* Простой счетчик для навешивания id на элементы (не комильфо, но здесь подойдет :) 
-*/
-var id = 1;
-
+let id = 1;
 /**
 * Построение дерева папок и файлов по результатам асинхронного запроса на сервер 
 */
@@ -10,7 +6,7 @@ const getTree = async (node, opened) => {
 
     try {
         let data = [];
-        const path = getNodePath(node) + node.innerText;
+        const path = getNodePath(node);
 
         let response = await fetch(path);
         if (!response.ok) {
@@ -35,18 +31,29 @@ const getTree = async (node, opened) => {
 };
 
 /**
+ * Сортировка дочерних элементов узла
+ */
+const sortNodeChildren = (node) => {
+    const childrenNodes = Array.from(node.children);
+    childrenNodes.sort((a,b) => +a.innerText > +b.innerText ?1:-1);
+    childrenNodes.forEach((child) => node.appendChild(child));
+};
+
+/**
 * Построение пути до текущего узла (папки или файла), начиная с вершины хранилища
 */
-const getNodePath = (node) => {
+const getNodePath = (node, parentFolder = false) => {
 
     let elem = node;
-    let path = '';
+    let path = '/';
 
-    while ((elem !== null) && (elem.id !== 'Storage')) {
+    while ((elem !== null) && (elem.id !== '/Storage')) {
         elem = elem.parentElement;
-        if (elem.classList.contains('folder')) path = elem.firstChild.textContent + '/' + path; 
+        if (elem.classList.contains('folder')) path = '/' + elem.firstChild.textContent + path; 
     }
-    return '/' + path;
+    const fName = node.getElementsByTagName('LI')[0]? node.firstChild.textContent : node.textContent;
+
+    return parentFolder? path : path + fName;
 }
 
 /**
@@ -62,12 +69,11 @@ const addChildren = (parent, data, opened) => {
     data.forEach(elem => {
         const li = document.createElement('li');
         ul.appendChild(li);
-        li.id = id++;
         li.className = elem.isDir? 'folder' : 'file';
         li.innerText = elem.name;
+        li.id = 'id' + id++;
         li.addEventListener('click', handleNodeClick);
         li.addEventListener('mouseenter', showFileDescription);
-       // li.addEventListener('mouseleave', ()=>$('#view-description').hide(280));
         contextMenuListener(li);
     });
 };
@@ -81,7 +87,7 @@ const handleNodeClick = (event) => {
     event.preventDefault();
     const target = event.target;
     if (target.tagName != 'LI') return;
-    const id = target.id;
+    id = target.id;
 
     if ($(target).hasClass('folder')) {
         $(target.children[0]).toggle(480);
@@ -99,8 +105,8 @@ const handleNodeClick = (event) => {
     if ($(target).hasClass('viewed')) {
         if (!$(target).hasClass('current')) {
             $('li.file.current, .file-tab.current, .file-data.current').removeClass('current');
-            $('#file-tab'+id).addClass('current');
-            $('#file-data'+id).addClass('current');
+            $(`#file-tab${id}`).addClass('current');
+            $(`#file-data${id}`).addClass('current');
             $(target).addClass('current');
         }
     } else {
@@ -174,7 +180,7 @@ const openFileView = (node) => {
 */
 const getFileData = async (node) => {
 
-    const path = getNodePath(node) + node.innerText;
+    const path = getNodePath(node);
     let response;
 
     try {
@@ -204,7 +210,7 @@ const showFileDescription = (event) => {
         return;        
     }
 
-    const fPath = getNodePath(node) + node.innerText;
+    const fPath = getNodePath(node);
     fetch(fPath)
         .then((response) => response.text())
         .then((data) => {
@@ -242,7 +248,7 @@ const writeFileDescription = (isOk) => {
     let description = arr.join('\n');
 
     const node = document.querySelector('li.file.current');
-    const fPath = getNodePath(node) + node.innerText;
+    const fPath = getNodePath(node);
     let newData = '';
 
     getFileData(node)
@@ -266,13 +272,12 @@ const writeFileDescription = (isOk) => {
             })
         })
         .then((response) => {
-            console.log('response');
             const fileData = document.querySelector('#file-data' + node.id);
             if (fileData) fileData.innerHTML = syntaxLights(newData);
             return response.text();
         })
         .then((res) => {
-            console.log('res:', res);
+            console.log(res);
         })
         .catch((error) => {
                 console.error('Ошибка записи файла (description):', error);
@@ -306,7 +311,7 @@ const contextMenuListener = (elem) => {
             $(elem).addClass('current');
         }
 
-        if (elem.id === 'Storage') {
+        if (elem.id === '/Storage') {
             for (i=0; i < 4; i++)
                $('.for-top').addClass('hide');
         }
@@ -369,7 +374,7 @@ const deleteNode = (nodeType) => {
         return;
     }
 
-    let fPath = getNodePath(node) + $(node)[0].childNodes[0].nodeValue;
+    let fPath = getNodePath(node) // + $(node)[0].childNodes[0].nodeValue;
     const confirmText = (nodeType === 'folder') ? ('Удалить папку "' + fPath + '" и ее содержимое?') :
         ('Удалить файл ' + fPath + '?')
     if (confirm(confirmText)) {
@@ -400,9 +405,9 @@ const renameNode = (nodeType) => {
         return;
     }
 
-    const filename = node.firstChild.textContent;
+    const filename = node.getElementsByTagName('LI')[0]? node.firstChild.textContent : node.textContent;
     const regex = /^[^<>:"/\\|?*\x00-\x1F]+$/;
-    let test = false
+    let test = false;
     let newName = '';
     while (!test) {
         newName = prompt('Введите новое имя ' + 
@@ -413,9 +418,17 @@ const renameNode = (nodeType) => {
             alert('Недопустимые символы в имени файла!');
         } else
             test = true;
-    }
+    };
 
-    let fPath = getNodePath(node) + filename;
+    for (n of node.parentElement.children) {
+        if (n.isSameNode(node)) continue;
+        if (n.textContent.indexOf(newName) === 0) {
+            alert('Такой объект уже существует.При необходимости удалите его');
+            return;
+        };
+    };
+
+    let fPath = getNodePath(node);
     fPath += '?rename=' + newName;
 
     fetch(fPath)
@@ -442,7 +455,7 @@ const createFolder = () => {
         return;
     }
 
-    const parentFolder = node.firstChild.textContent;
+ //   const parentFolder = node.firstChild.textContent;
     const regex = /^[^<>:"/\\|?*\x00-\x1F]+$/;
     let test = false
     let newFolder = '';
@@ -455,7 +468,7 @@ const createFolder = () => {
             test = true;
     }
 
-    let fPath = getNodePath(node) + parentFolder;
+    let fPath = getNodePath(node);// + parentFolder;
     fPath += '?mkdir=' + newFolder;
 
     fetch(fPath)
@@ -471,16 +484,29 @@ const createFolder = () => {
 }
 
 /**
-* Асинхронная загрузка файла
+* Асинхронная загрузка файла в хранилище
 */
-const uploadFile = () => {
+const  uploadFile = () => {
 
     const node = document.querySelector('li.folder.current');
-    const file = document.getElementById('file-upload').files[0];
-    if (!file) return;
-    if (node.children[0]) node.removeChild(node.children[0]);
-    const url = getNodePath(node) + node.innerText + '/' + file.name;
-    console.log(url);
+    const inp = document.getElementById('file-upload');
+    const file = inp.files[0];
+    const filename = file.name;
+
+    if (!(file && node)) return;
+    let id = '';
+    inp.value = '';
+
+    for (n of node.children[0].children) {
+        if (n.textContent.indexOf(filename) === 0) {
+            if (!confirm('Такой файл уже существует. Переписать его?')) {
+                return;
+            }
+            id = n.id;
+        };
+    };
+
+    const url = getNodePath(node) + '/' + filename;
 
     fetch(url, {
             method: 'POST', 
@@ -495,8 +521,21 @@ const uploadFile = () => {
             console.error('Ошибка загрузки файла:', error);
         })
         .finally(() => {
-            getTree(node, true);
-            $(node).addClass('opened current');
+            const currentFile = document.querySelector('.file.current')
+            if (currentFile) currentFile.classList.remove('current');
+            if (id) {
+                let li = document.getElementById(id);
+                li.classList.add('current');
+            } else {
+                let li = document.createElement('LI');
+                node.children[0].appendChild(li); 
+                li.textContent = filename;
+                li.classList.add('file');
+                li.classList.add('current');
+                sortNodeChildren(node.children[0]);
+            };
+            $(node.children[0]).show(480);
+            node.classList.add('opened');
         });
 };
 
@@ -510,7 +549,7 @@ const downloadFile = () => {
         alert('Не найдена текущий файл!');
         return;
     }
-    const filePath = getNodePath(node) + node.firstChild.textContent;
+    const filePath = getNodePath(node); 
     const a = document.createElement('a');
     a.href = filePath;
     a.download = node.firstChild.textContent;
@@ -691,6 +730,6 @@ document.addEventListener('click', function(event) {
 * Создание дерева с вершины после загрузки документа
 */
 $(document).ready(function() {
-    getTree(document.getElementById('Storage'), true);
-    contextMenuListener(document.getElementById('Storage'));
+    getTree(document.getElementById('/Storage'), true);
+    contextMenuListener(document.getElementById('/Storage'));
 });
